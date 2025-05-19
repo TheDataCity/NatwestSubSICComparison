@@ -40,7 +40,7 @@ class SubSICComparison:
     def match_by_website(self) -> None:
         if self.matched_df is None:
             raise ValueError("No CRN matched data")
-            
+
         # Filter out rows without websites
         self.matched_df = self.matched_df.filter(
             (pl.col('NW_Website').is_not_null())
@@ -51,12 +51,12 @@ class SubSICComparison:
             pl.col("TDC_Website").str.strip_chars_start('www.'),
             + pl.col("NW_Website").str.strip_chars_start('www.')
         ])
-            
+
         # Normalize nw website
         self.matched_df = self.matched_df.with_columns([
             pl.col('NW_Website').map_elements(domain_calculator).alias('NW_Website_normalized')
         ])
-        
+
         # Compare websites
         self.matched_df = self.matched_df.with_columns([
             (pl.col('TDC_Website') == pl.col('NW_Website_normalized')).alias('website_match')
