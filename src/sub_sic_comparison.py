@@ -37,77 +37,87 @@ class SubSICComparison:
             suffix='_NW'
         )
 
-    def match_by_website(self) -> None:
+    def match_by_website(self) -> pl.DataFrame:
         if self.matched_df is None:
             raise ValueError("No CRN matched data")
 
         # Filter out rows without websites
-        self.matched_df = self.matched_df.filter(
+        website_filtered_df = self.matched_df.filter(
             (pl.col('NW_Website').is_not_null())
         )
 
         # Remove www. prefix from both website columns
-        self.matched_df = self.matched_df.with_columns([
+        website_filtered_df = website_filtered_df.with_columns([
             pl.col("TDC_Website").str.strip_chars_start('www.'),
-            + pl.col("NW_Website").str.strip_chars_start('www.')
+            pl.col("NW_Website").str.strip_chars_start('www.')
         ])
 
         # Normalize nw website
-        self.matched_df = self.matched_df.with_columns([
+        website_filtered_df = website_filtered_df.with_columns([
             pl.col('NW_Website').map_elements(domain_calculator).alias('NW_Website_normalized')
         ])
 
         # Compare websites
-        self.matched_df = self.matched_df.with_columns([
+        website_filtered_df = website_filtered_df.with_columns([
             (pl.col('TDC_Website') == pl.col('NW_Website_normalized')).alias('website_match')
         ])
 
-    def compare_sub_sic(self) -> None:
-        if self.matched_df is None:
-            raise ValueError("No matched data")
+        # Return only rows where websites match
+        return website_filtered_df.filter(pl.col('website_match'))
 
+    def compare_sub_sic(self, df: pl.DataFrame) -> pl.DataFrame:
         def check_sub_sic_match(our_sics: List[str], nw_sics: List[str]) -> bool:
             if not our_sics or not nw_sics:
                 return False
             return any(sic in our_sics for sic in nw_sics)
 
-        self.matched_df = self.matched_df.with_columns([
+        return df.with_columns([
             pl.struct(['TDC_SubSICs', 'CDD_SubSICs'])
             .map_elements(lambda x: check_sub_sic_match(x['TDC_SubSICs'], x['CDD_SubSICs']))
             .alias('sub_sic_match')
         ])
 
-    def generate_summary(self) -> Dict[str, Any]:
-        if self.matched_df is None:
-            raise ValueError("No matched data")
-
-        return {
-            'total_companies': self.matched_df.height,
-            'crn_matches': self.matched_df.height,
-            'website_matches': self.matched_df.filter(pl.col('website_match')).height,
-            'sub_sic_matches': self.matched_df.filter(pl.col('sub_sic_match')).height,
-            'match_rate': (self.matched_df.filter(pl.col('sub_sic_match')).height / self.matched_df.height) * 100
+    def generate_summary(self, df: pl.DataFrame, analysis_type: str) -> Dict[str, Any]:
+        summary = {
+            'analysis_type': analysis_type,
+            'total_companies': df.height,
+            'sub_sic_matches': df.filter(pl.col('sub_sic_match')).height,
+            'match_rate': (df.filter(pl.col('sub_sic_match')).height / df.height) * 100 if df.height > 0 else 0
         }
 
-    def save_results(self, output_path: Path) -> None:
-        if self.matched_df is None:
-            raise ValueError("No matched data")
+        if 'website_match' in df.columns:
+            summary['website_matches'] = df.filter(pl.col('website_match')).height
 
-        # Drop nw sub-sic codes and normalized website
-        result_df = self.matched_df.drop(['CDD_SubSICs', 'NW_Website_normalized'])
+        return summary
+
+    def save_results(self, df: pl.DataFrame, output_path: Path) -> None:
+        # Drop columns that might not exist in all dataframes
+        columns_to_drop = []
+        for col in ['CDD_SubSICs', 'NW_Website_normalized']:
+            if col in df.columns:
+                columns_to_drop.append(col)
+
+        result_df = df.drop(columns_to_drop) if columns_to_drop else df
         result_df.write_excel(output_path)
 
     def run(self) -> None:
         self.read_data()
         self.match_by_crn()
-        self.match_by_website()
-        self.compare_sub_sic()
 
-        summary = self.generate_summary()
-        print("Summary:", summary)
+        # Analysis 1: CRN match only (no website filtering)
+        crn_only_df = self.compare_sub_sic(self.matched_df)
+        crn_summary = self.generate_summary(crn_only_df, "CRN Match Only")
+        print("CRN Only Summary:", crn_summary)
 
-        output_path = Path("_data/results.xlsx")
-        self.save_results(output_path)
+        # Analysis 2: CRN + Website match
+        website_matched_df = self.match_by_website()
+        crn_website_df = self.compare_sub_sic(website_matched_df)
+        website_summary = self.generate_summary(crn_website_df, "CRN + Website Match")
+        print("CRN + Website Summary:", website_summary)
+
+        # Save both results
+        self.save_results(crn_only_df, Path("_data/results_crn_only.xlsx"))
+        self.save_results(crn_website_df, Path("_data/results_crn_website.xlsx"))
 
 
 def main():
