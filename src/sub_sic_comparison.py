@@ -97,7 +97,7 @@ class SubSICComparison:
     def save_results(self, df: pl.DataFrame, output_path: Path) -> None:
         # Drop columns that might not exist in all dataframes
         columns_to_drop = []
-        for col in ['CDD_SubSICs', 'NW_Website_normalized']:
+        for col in ['CDD_SubSICs', 'NW_Website_normalized', 'CDD Sub_SIC Code']:
             if col in df.columns:
                 columns_to_drop.append(col)
 
