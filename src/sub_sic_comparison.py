@@ -16,8 +16,12 @@ class SubSICComparison:
 
     def read_data(self) -> None:
         # Read data and convert SubSIC columns to lists
-        self.our_df = pl.read_excel(self.our_file).with_columns([
-            pl.col('TDC_SubSICs').str.split(',').alias('TDC_SubSICs')
+        self.our_df = pl.read_csv(self.our_file, dtypes={
+            'Companynumber': pl.Utf8,
+            'TDC_Website': pl.Utf8,
+            'sub_sics': pl.Utf8
+        }).with_columns([
+            pl.col('sub_sics').str.split(',').alias('TDC_SubSICs')
         ])
 
         self.nw_df = pl.read_excel(self.nw_file).with_columns([
