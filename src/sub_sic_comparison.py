@@ -48,29 +48,44 @@ class SubSICComparison:
         if self.matched_df is None:
             raise ValueError("No CRN matched data")
 
-        # Filter out rows without websites
+        # Start with all matched data
+        result_df = self.matched_df.with_columns([
+            pl.lit(False).alias('website_match')  # Default to False
+        ])
+
+        # Filter rows that have websites for processing
         website_filtered_df = self.matched_df.filter(
-            (pl.col('NW_Website').is_not_null())
+            (pl.col('NW_Website').is_not_null()) & 
+            (pl.col('TDC_Website').is_not_null())
         )
 
-        # Remove www. prefix from both website columns
-        website_filtered_df = website_filtered_df.with_columns([
-            pl.col("TDC_Website").str.strip_chars_start('www.'),
-            pl.col("NW_Website").str.strip_chars_start('www.').str.to_lowercase()
-        ])
+        if website_filtered_df.height > 0:
+            # Remove www. prefix from both website columns
+            website_filtered_df = website_filtered_df.with_columns([
+                pl.col("TDC_Website").str.strip_chars_start('www.'),
+                pl.col("NW_Website").str.strip_chars_start('www.').str.to_lowercase()
+            ])
 
-        # Normalize nw website
-        website_filtered_df = website_filtered_df.with_columns([
-            pl.col('NW_Website').map_elements(domain_calculator, return_dtype=pl.Utf8).alias('NW_Website_normalized')
-        ])
+            # Normalize nw website
+            website_filtered_df = website_filtered_df.with_columns([
+                pl.col('NW_Website').map_elements(domain_calculator, return_dtype=pl.Utf8).alias('NW_Website_normalized')
+            ])
 
-        # Compare websites
-        website_filtered_df = website_filtered_df.with_columns([
-            (pl.col('TDC_Website') == pl.col('NW_Website_normalized')).alias('website_match')
-        ])
+            # Compare websites
+            website_filtered_df = website_filtered_df.with_columns([
+                (pl.col('TDC_Website') == pl.col('NW_Website_normalized')).alias('website_match')
+            ])
 
-        # Return only rows where websites match
-        return website_filtered_df.filter(pl.col('website_match'))
+            # Update the result with website matches
+            result_df = result_df.with_columns([
+                pl.when(
+                    pl.col('Companynumber').is_in(
+                        website_filtered_df.filter(pl.col('website_match')).select('Companynumber')
+                    )
+                ).then(True).otherwise(pl.col('website_match')).alias('website_match')
+            ])
+
+        return result_df
 
     def compare_sub_sic(self, df: pl.DataFrame) -> pl.DataFrame:
         def check_sub_sic_match(our_sics: List[str], nw_sics: List[str]) -> bool:
@@ -111,20 +126,24 @@ class SubSICComparison:
         self.read_data()
         self.match_by_crn()
 
-        # Analysis 1: CRN match only (no website filtering)
-        crn_only_df = self.compare_sub_sic(self.matched_df)
-        crn_summary = self.generate_summary(crn_only_df, "CRN Match Only")
-        print("CRN Only Summary:", crn_summary)
+        # Get all matched data with website match indicator
+        all_matched_df = self.match_by_website()
+        
+        # Add sub SIC comparison
+        final_df = self.compare_sub_sic(all_matched_df)
+        
+        # Generate summaries for reporting
+        crn_summary = self.generate_summary(final_df, "All CRN Matches")
+        website_only_summary = self.generate_summary(
+            final_df.filter(pl.col('website_match')), 
+            "CRN + Website Matches"
+        )
+        
+        print("All CRN Matches Summary:", crn_summary)
+        print("CRN + Website Matches Summary:", website_only_summary)
 
-        # Analysis 2: CRN + Website match
-        website_matched_df = self.match_by_website()
-        crn_website_df = self.compare_sub_sic(website_matched_df)
-        website_summary = self.generate_summary(crn_website_df, "CRN + Website Match")
-        print("CRN + Website Summary:", website_summary)
-
-        # Save both results
-        self.save_results(crn_only_df, Path("_data/results_crn_only.xlsx"))
-        self.save_results(crn_website_df, Path("_data/results_crn_website.xlsx"))
+        # Save single result file
+        self.save_results(final_df, Path("_data/results_combined.xlsx"))
 
 
 def main():
