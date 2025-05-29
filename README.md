@@ -24,7 +24,7 @@ uv pip install git+<repository-url>
 
 3. Place your input files in a `_data` directory:
    - `TDCDummyData.xlsx` - TDC dataset
-   - `NatwestDummyData.xlsx` - Natwest dataset
+   - `NatwestDummyDataCSV.csv` - Natwest dataset
 
 4. Run the comparison:
 ```bash
@@ -33,24 +33,49 @@ python -m src.sub_sic_comparison
 
 ## What it does
 
-The script performs two separate analyses:
+The script performs a comprehensive analysis that:
 
-### Analysis 1: CRN Match Only
-- Matches companies by Company Registration Number (CRN)
-- Compares SubSIC codes between datasets
-- No website filtering applied
-- Saves results to `_data/results_crn_only.xlsx`
+1. **Matches companies by Company Registration Number (CRN)**
+2. **Identifies website matches** using domain normalization
+3. **Compares SubSIC codes** with both exact and partial matching
+4. **Generates comprehensive results** in a single output file
 
-### Analysis 2: CRN + Website Match
-- Matches companies by CRN
-- Filters to only companies with matching website domains
-- Compares SubSIC codes for the filtered subset
-- Saves results to `_data/results_crn_website.xlsx`
+### Matching Types
 
-Both analyses generate summary statistics showing:
+#### Exact SubSIC Match
+- Direct comparison of SubSIC codes between datasets
+- Returns `True` if any SubSIC code appears in both lists
+
+#### Partial SubSIC Match  
+- Splits SubSIC codes on underscore (`_`) and compares prefixes
+- Example: `69109_11104` matches with `69109_11098` (both have prefix `69109`)
+- Returns `True` if any prefix from one dataset matches any prefix from the other
+
+#### Website Match
+- Normalizes website domains using domain calculator
+- Removes `www.` prefixes and standardizes formatting
+- Returns `True` if normalized domains match
+
+### Output
+
+- Single results file: `_data/results_combined.xlsx`
+- Contains all matched companies with columns:
+  - `sub_sic_match` - Boolean for exact SubSIC matches
+  - `partial_match` - Boolean for partial SubSIC matches  
+  - `website_match` - Boolean for website domain matches
+
+### Summary Statistics
+
+The tool generates two summary reports:
+
+1. **All CRN Matches**: Statistics for all companies matched by CRN
+2. **CRN + Website Matches**: Statistics filtered to companies with matching websites
+
+Each summary includes:
 - Total companies analyzed
-- Number of SubSIC matches
-- Match rate percentage
+- Exact SubSIC matches and match rate
+- Partial SubSIC matches and match rate  
+- Website matches (where applicable)
 
 ## Input File Format
 
@@ -60,7 +85,7 @@ Required columns:
 - `TDC_Website`
 - `TDC_SubSICs` (comma-separated values)
 
-### Natwest Data (`NatwestDummyData.xlsx`)
+### Natwest Data (`NatwestDummyDataCSV.csv`)
 Required columns:
 - `Companynumber`
 - `NW_Website`
