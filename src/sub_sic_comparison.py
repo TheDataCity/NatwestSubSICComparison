@@ -55,7 +55,7 @@ class SubSICComparison:
 
         # Filter rows that have websites for processing
         website_filtered_df = self.matched_df.filter(
-            (pl.col('NW_Website').is_not_null()) & 
+            (pl.col('NW_Website').is_not_null()) &
             (pl.col('TDC_Website').is_not_null())
         )
 
@@ -68,7 +68,8 @@ class SubSICComparison:
 
             # Normalize nw website
             website_filtered_df = website_filtered_df.with_columns([
-                pl.col('NW_Website').map_elements(domain_calculator, return_dtype=pl.Utf8).alias('NW_Website_normalized')
+                pl.col('NW_Website').map_elements(domain_calculator, return_dtype=pl.Utf8).alias(
+                    'NW_Website_normalized')
             ])
 
             # Compare websites
@@ -80,7 +81,7 @@ class SubSICComparison:
             result_df = result_df.with_columns([
                 pl.when(
                     pl.col('Companynumber').is_in(
-                        website_filtered_df.filter(pl.col('website_match')).select('Companynumber')
+                        website_filtered_df.filter(pl.col('website_match')).get_column('Companynumber').to_list()
                     )
                 ).then(True).otherwise(pl.col('website_match')).alias('website_match')
             ])
@@ -93,10 +94,29 @@ class SubSICComparison:
                 return False
             return any(sic in our_sics for sic in nw_sics)
 
+        def check_partial_sub_sic_match(our_sics: List[str], nw_sics: List[str]) -> bool:
+            if not our_sics or not nw_sics:
+                return False
+
+            # Extract prefixes from our_sics (split on underscore, take first part)
+            our_prefixes = {sic.split('_')[0] for sic in our_sics if '_' in sic}
+
+            # Extract prefixes from nw_sics and check for matches
+            for nw_sic in nw_sics:
+                if '_' in nw_sic:
+                    nw_prefix = nw_sic.split('_')[0]
+                    if nw_prefix in our_prefixes:
+                        return True
+            return False
+
         return df.with_columns([
             pl.struct(['TDC_SubSICs', 'CDD_SubSICs'])
             .map_elements(lambda x: check_sub_sic_match(x['TDC_SubSICs'], x['CDD_SubSICs']), return_dtype=pl.Boolean)
-            .alias('sub_sic_match')
+            .alias('sub_sic_match'),
+            pl.struct(['TDC_SubSICs', 'CDD_SubSICs'])
+            .map_elements(lambda x: check_partial_sub_sic_match(x['TDC_SubSICs'], x['CDD_SubSICs']),
+                          return_dtype=pl.Boolean)
+            .alias('partial_match')
         ])
 
     def generate_summary(self, df: pl.DataFrame, analysis_type: str) -> Dict[str, Any]:
@@ -106,6 +126,11 @@ class SubSICComparison:
             'sub_sic_matches': df.filter(pl.col('sub_sic_match')).height,
             'match_rate': (df.filter(pl.col('sub_sic_match')).height / df.height) * 100 if df.height > 0 else 0
         }
+
+        if 'partial_match' in df.columns:
+            summary['partial_matches'] = df.filter(pl.col('partial_match')).height
+            summary['partial_match_rate'] = (df.filter(
+                pl.col('partial_match')).height / df.height) * 100 if df.height > 0 else 0
 
         if 'website_match' in df.columns:
             summary['website_matches'] = df.filter(pl.col('website_match')).height
@@ -128,17 +153,17 @@ class SubSICComparison:
 
         # Get all matched data with website match indicator
         all_matched_df = self.match_by_website()
-        
+
         # Add sub SIC comparison
         final_df = self.compare_sub_sic(all_matched_df)
-        
+
         # Generate summaries for reporting
         crn_summary = self.generate_summary(final_df, "All CRN Matches")
         website_only_summary = self.generate_summary(
-            final_df.filter(pl.col('website_match')), 
+            final_df.filter(pl.col('website_match')),
             "CRN + Website Matches"
         )
-        
+
         print("All CRN Matches Summary:", crn_summary)
         print("CRN + Website Matches Summary:", website_only_summary)
 
