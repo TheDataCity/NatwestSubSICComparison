@@ -61,7 +61,7 @@ class SubSICComparison:
 
         # Normalize nw website
         website_filtered_df = website_filtered_df.with_columns([
-            pl.col('NW_Website').map_elements(domain_calculator).alias('NW_Website_normalized')
+            pl.col('NW_Website').map_elements(domain_calculator, return_dtype=pl.Utf8).alias('NW_Website_normalized')
         ])
 
         # Compare websites
@@ -80,7 +80,7 @@ class SubSICComparison:
 
         return df.with_columns([
             pl.struct(['TDC_SubSICs', 'CDD_SubSICs'])
-            .map_elements(lambda x: check_sub_sic_match(x['TDC_SubSICs'], x['CDD_SubSICs']))
+            .map_elements(lambda x: check_sub_sic_match(x['TDC_SubSICs'], x['CDD_SubSICs']), return_dtype=pl.Boolean)
             .alias('sub_sic_match')
         ])
 
