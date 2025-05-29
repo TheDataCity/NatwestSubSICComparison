@@ -16,16 +16,19 @@ class SubSICComparison:
 
     def read_data(self) -> None:
         # Read data and convert SubSIC columns to lists
-        self.our_df = pl.read_csv(self.our_file, dtypes={
-            'Companynumber': pl.Utf8,
-            'TDC_Website': pl.Utf8,
-            'sub_sics': pl.Utf8
-        }).with_columns([
-            pl.col('sub_sics').str.split(',').alias('TDC_SubSICs')
+        self.our_df = pl.read_excel(self.our_file).with_columns([
+            pl.col('Companynumber').cast(pl.Utf8),
+            pl.col('TDC_Website').cast(pl.Utf8),
+            pl.col('TDC_SubSICs').cast(pl.Utf8).str.split(',').list.eval(pl.element().str.strip_chars()).alias(
+                'TDC_SubSICs')
         ])
 
-        self.nw_df = pl.read_excel(self.nw_file).with_columns([
-            pl.col('CDD Sub_SIC Code').str.split(',').alias('CDD_SubSICs')
+        self.nw_df = pl.read_csv(self.nw_file, schema_overrides={
+            'Companynumber': pl.Utf8,
+            'NW_Website': pl.Utf8,
+            'CDD Sub_SIC Code': pl.Utf8
+        }, encoding='utf8-lossy').with_columns([
+            pl.col('CDD Sub_SIC Code').str.split(',').list.eval(pl.element().str.strip_chars()).alias('CDD_SubSICs')
         ])
 
     def match_by_crn(self) -> None:
@@ -53,7 +56,7 @@ class SubSICComparison:
         # Remove www. prefix from both website columns
         website_filtered_df = website_filtered_df.with_columns([
             pl.col("TDC_Website").str.strip_chars_start('www.'),
-            pl.col("NW_Website").str.strip_chars_start('www.')
+            pl.col("NW_Website").str.strip_chars_start('www.').str.to_lowercase()
         ])
 
         # Normalize nw website
@@ -97,7 +100,7 @@ class SubSICComparison:
     def save_results(self, df: pl.DataFrame, output_path: Path) -> None:
         # Drop columns that might not exist in all dataframes
         columns_to_drop = []
-        for col in ['CDD_SubSICs', 'NW_Website_normalized', 'CDD Sub_SIC Code']:
+        for col in ['CDD_SubSICs', 'NW_Website_normalized', 'CDD Sub_SIC Code', 'CDD_SUB_SIC_CODE', 'NW_Website']:
             if col in df.columns:
                 columns_to_drop.append(col)
 
@@ -126,7 +129,7 @@ class SubSICComparison:
 
 def main():
     our_file = Path("_data/TDCDummyData.xlsx")
-    nw_file = Path("_data/NatwestDummyData.xlsx")
+    nw_file = Path("_data/NatwestDummyDataCSV.csv")
 
     comparison = SubSICComparison(our_file, nw_file)
     comparison.run()
