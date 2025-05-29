@@ -15,12 +15,33 @@ class SubSICComparison:
         self.matched_df: Optional[pl.DataFrame] = None
 
     def read_data(self) -> None:
+        def clean_tdc_subsics(subsics_str: str) -> List[str]:
+            """Clean the TDC_SubSICs string and return a proper list."""
+            if not subsics_str:
+                return []
+            
+            # Handle both comma-separated strings and string representations of lists
+            if subsics_str.startswith('[') and subsics_str.endswith(']'):
+                # String representation of list: ['item1', ' item2', ' item3']
+                cleaned = subsics_str.strip("[]'\"")
+                items = cleaned.split(',')
+                
+                result = []
+                for item in items:
+                    clean_item = item.strip().strip("'\"").strip()
+                    if clean_item:
+                        result.append(clean_item)
+                return result
+            else:
+                # Regular comma-separated string
+                items = subsics_str.split(',')
+                return [item.strip() for item in items if item.strip()]
+
         # Read data and convert SubSIC columns to lists
         self.our_df = pl.read_excel(self.our_file).with_columns([
             pl.col('Companynumber').cast(pl.Utf8),
             pl.col('TDC_Website').cast(pl.Utf8),
-            pl.col('TDC_SubSICs').cast(pl.Utf8).str.split(',').list.eval(pl.element().str.strip_chars()).alias(
-                'TDC_SubSICs')
+            pl.col('TDC_SubSICs').cast(pl.Utf8).map_elements(clean_tdc_subsics, return_dtype=pl.List(pl.Utf8)).alias('TDC_SubSICs')
         ])
 
         self.nw_df = pl.read_csv(self.nw_file, schema_overrides={
